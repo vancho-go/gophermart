@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/vancho-go/gophermart/internal/app/config"
+	"github.com/vancho-go/gophermart/internal/app/logger"
+	"log"
 	"net/http"
 )
 
@@ -11,6 +13,12 @@ func main() {
 	configuration, err := config.BuildServer()
 	if err != nil {
 		panic(fmt.Errorf("error building server configuration: %w", err))
+	}
+
+	zapLogger, err := logger.NewZapLogger("debug")
+
+	if err != nil {
+		log.Fatalf("Failed to create logger: %s", err.Error())
 	}
 
 	r := chi.NewRouter()
