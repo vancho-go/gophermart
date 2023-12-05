@@ -1,8 +1,18 @@
 package main
 
-import "github.com/go-chi/chi/v5"
+import (
+	"fmt"
+	"github.com/go-chi/chi/v5"
+	"github.com/vancho-go/gophermart/internal/app/config"
+	"net/http"
+)
 
 func main() {
+	configuration, err := config.BuildServer()
+	if err != nil {
+		panic(fmt.Errorf("error building server configuration: %w", err))
+	}
+
 	r := chi.NewRouter()
 
 	r.Route("/api/user", func(r chi.Router) {
@@ -21,4 +31,9 @@ func main() {
 			})
 		})
 	})
+
+	err = http.ListenAndServe(configuration.ServerRunAddress, r)
+	if err != nil {
+		panic(fmt.Errorf("error starting server: %w", err))
+	}
 }
