@@ -7,10 +7,10 @@ import (
 	"fmt"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/vancho-go/gophermart/internal/app/auth"
-	"net/http"
 )
 
 var ErrUsernameNotUnique = errors.New("username is already in use")
+var ErrUserNotFound = errors.New("user not found")
 
 type Storage struct {
 	DB *sql.DB
@@ -51,47 +51,68 @@ func CreateIfNotExists(db *sql.DB) error {
 	return nil
 }
 
-func (s *Storage) RegisterUser(ctx context.Context, username, password string) (*http.Cookie, error) {
+func (s *Storage) RegisterUser(ctx context.Context, username, password string) (string, error) {
 	usernameUnique, err := s.isUsernameUnique(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("register: user register error: %w", err)
+		return "", fmt.Errorf("register: user register error: %w", err)
 	}
 	if !usernameUnique {
-		return nil, ErrUsernameNotUnique
+		return "", ErrUsernameNotUnique
 	}
 
 	userID := auth.GenerateUserID()
 	userIDUnique, err := s.isUserIDUnique(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("register: user register error: %w", err)
+		return "", fmt.Errorf("register: user register error: %w", err)
 	}
 	for !userIDUnique {
 		userIDUnique, err = s.isUserIDUnique(ctx, userID)
 		if err != nil {
-			return nil, fmt.Errorf("register: user register error: %w", err)
+			return "", fmt.Errorf("register: user register error: %w", err)
 		}
 	}
 
 	hashedPassword, err := auth.HashPassword(password)
 	if err != nil {
-		return nil, fmt.Errorf("register: user register error: %w", err)
+		return "", fmt.Errorf("register: user register error: %w", err)
 	}
 
 	query := "INSERT INTO users (user_id, login, password) VALUES ($1,$2,$3)"
 	_, err = s.DB.ExecContext(ctx, query, userID, username, hashedPassword)
 	if err != nil {
-		return nil, fmt.Errorf("register: user register error: %w", err)
-	}
-	cookie, err := auth.GenerateCookie(userID)
-	if err != nil {
-		return nil, fmt.Errorf("register: user register error: %w", err)
+		return "", fmt.Errorf("register: user register error: %w", err)
 	}
 
-	return cookie, nil
+	return userID, nil
 }
 
-func (s *Storage) AuthenticateUser(ctx context.Context, username, password string) error {
-	return nil
+func (s *Storage) AuthenticateUser(ctx context.Context, username, password string) (string, error) {
+	hashedPassword, err := s.getHashedPasswordByUsername(ctx, username)
+	if err != nil {
+		return "", fmt.Errorf("authenticateUser: error user auth: %w", err)
+	}
+	if !auth.IsPasswordEqualsToHashedPassword(password, hashedPassword) {
+		return "", fmt.Errorf("authenticateUser: error user auth: %w", ErrUserNotFound)
+	}
+	userID, err := s.getUserIDByUsername(ctx, username)
+	if err != nil {
+		return "", fmt.Errorf("authenticateUser: error user auth: %w", err)
+	}
+	return userID, nil
+}
+
+func (s *Storage) getHashedPasswordByUsername(ctx context.Context, username string) (string, error) {
+	query := "SELECT password FROM users WHERE login=$1"
+	row := s.DB.QueryRowContext(ctx, query, username)
+
+	var hashedPassword string
+	err := row.Scan(&hashedPassword)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("getHashedPasswordByUsername: username not found: %w", ErrUserNotFound)
+	} else if err != nil {
+		return "", fmt.Errorf("getHashedPasswordByUsername: error scanning row: %w", err)
+	}
+	return hashedPassword, nil
 }
 
 func (s *Storage) isUsernameUnique(ctx context.Context, username string) (bool, error) {
@@ -114,4 +135,18 @@ func (s *Storage) isUserIDUnique(ctx context.Context, userID string) (bool, erro
 		return false, fmt.Errorf("isUserIDUnique: error scanning row: %w", err)
 	}
 	return count == 0, nil
+}
+
+func (s *Storage) getUserIDByUsername(ctx context.Context, username string) (string, error) {
+	query := "SELECT user_id FROM users WHERE login=$1"
+	row := s.DB.QueryRowContext(ctx, query, username)
+
+	var userID string
+	err := row.Scan(&userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("getUserIDByUsername: username not found: %w", ErrUserNotFound)
+	} else if err != nil {
+		return "", fmt.Errorf("getUserIDByUsername: error scanning row: %w", err)
+	}
+	return userID, nil
 }
