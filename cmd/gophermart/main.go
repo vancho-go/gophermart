@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/vancho-go/gophermart/internal/app/config"
-	"github.com/vancho-go/gophermart/internal/app/logger"
+	"github.com/vancho-go/gophermart/internal/app/handlers"
+	"github.com/vancho-go/gophermart/internal/app/storage"
 	"log"
 	"net/http"
 )
@@ -12,20 +13,26 @@ import (
 func main() {
 	configuration, err := config.BuildServer()
 	if err != nil {
-		panic(fmt.Errorf("error building server configuration: %w", err))
+		log.Fatalf("error building server configuration: %s", err.Error())
 	}
 
-	zapLogger, err := logger.NewZapLogger("debug")
+	//zapLogger, err := logger.NewLogger("debug")
+	//_ = zapLogger
+	//
+	//if err != nil {
+	//	log.Fatalf("failed to create logger: %s", err.Error())
+	//}
 
+	dbInstance, err := storage.Initialize(configuration.DatabaseURI)
 	if err != nil {
-		log.Fatalf("Failed to create logger: %s", err.Error())
+		log.Fatalf("error initialising database: %s", err.Error())
 	}
 
 	r := chi.NewRouter()
 
 	r.Route("/api/user", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
-			r.Post("/register", nil)
+			r.Post("/register", handlers.UserRegister(dbInstance))
 			r.Post("/login", nil)
 			r.Post("/orders", nil)
 			r.Get("/orders", nil)

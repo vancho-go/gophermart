@@ -13,7 +13,7 @@ type ZapLogger struct {
 	logger *zap.Logger
 }
 
-func NewZapLogger(logLevel string) (Logger, error) {
+func NewLogger(logLevel string) (Logger, error) {
 	parsedLevel, err := zap.ParseAtomicLevel(logLevel)
 	if err != nil {
 		return nil, err

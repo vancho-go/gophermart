@@ -48,7 +48,7 @@ func BuildServer() (ServerConfig, error) {
 	)
 
 	flag.StringVar(&serverRunAddress, "a", "localhost:8080", "address:port to run server")
-	flag.StringVar(&databaseURI, "d", "", "connection string for driver to establish connection to he DB")
+	flag.StringVar(&databaseURI, "d", "host=localhost port=5432 user=vancho password=vancho_pswd dbname=vancho_db sslmode=disable", "connection string for driver to establish connection to he DB")
 	flag.StringVar(&accrualSystemAddress, "r", "", "address of the accrual calculation system")
 	flag.Parse()
 
