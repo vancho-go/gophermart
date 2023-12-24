@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/go-chi/chi/v5"
+	"github.com/vancho-go/gophermart/internal/app/auth"
 	"github.com/vancho-go/gophermart/internal/app/config"
 	"github.com/vancho-go/gophermart/internal/app/handlers"
 	"github.com/vancho-go/gophermart/internal/app/storage"
@@ -34,7 +35,11 @@ func main() {
 		r.Group(func(r chi.Router) {
 			r.Post("/register", handlers.RegisterUser(dbInstance))
 			r.Post("/login", handlers.AuthenticateUser(dbInstance))
-			r.Post("/orders", nil)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(auth.Middleware)
+			// не обработана 400 ошибка
+			r.Post("/orders", handlers.AddOrder(dbInstance))
 			r.Get("/orders", nil)
 			r.Get("/withdrawals", nil)
 		})

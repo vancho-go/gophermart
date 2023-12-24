@@ -5,12 +5,19 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/vancho-go/gophermart/internal/app/auth"
+	"github.com/vancho-go/gophermart/internal/app/models"
 )
 
-var ErrUsernameNotUnique = errors.New("username is already in use")
-var ErrUserNotFound = errors.New("user not found")
+var (
+	ErrUsernameNotUnique                       = errors.New("username is already in use")
+	ErrUserNotFound                            = errors.New("user not found")
+	ErrOrderNumberWasAlreadyAddedByThisUser    = errors.New("order number has already been added by this user")
+	ErrOrderNumberWasAlreadyAddedByAnotherUser = errors.New("order number has already been added by another user")
+)
 
 type Storage struct {
 	DB *sql.DB
@@ -27,22 +34,30 @@ func Initialize(uri string) (*Storage, error) {
 		return nil, fmt.Errorf("initialize: error verifing database connection: %w", err)
 	}
 
-	err = CreateIfNotExists(db)
+	err = createIfNotExists(db)
 	if err != nil {
 		return nil, fmt.Errorf("initialize: error creating database structure: %w", err)
 	}
 	return &Storage{DB: db}, nil
 }
 
-func CreateIfNotExists(db *sql.DB) error {
+func createIfNotExists(db *sql.DB) error {
 	createTableQuery := `
 		CREATE TABLE IF NOT EXISTS users (
-			id SERIAL PRIMARY KEY,
-			user_id VARCHAR NOT NULL,
+-- 			id SERIAL PRIMARY KEY,
+			user_id VARCHAR PRIMARY KEY NOT NULL,
 			login VARCHAR NOT NULL,
 			password VARCHAR NOT NULL,
 			UNIQUE (user_id)
-		);`
+		);
+		CREATE TABLE IF NOT EXISTS orders (
+		    order_id VARCHAR PRIMARY KEY NOT NULL,
+		    user_id VARCHAR REFERENCES users(user_id) ON DELETE CASCADE NOT NULL,
+		    uploaded_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			status VARCHAR NOT NULL DEFAULT 'NEW',
+			accrual INTEGER DEFAULT NULL
+		);
+`
 
 	_, err := db.Exec(createTableQuery)
 	if err != nil {
@@ -147,6 +162,45 @@ func (s *Storage) getUserIDByUsername(ctx context.Context, username string) (str
 		return "", fmt.Errorf("getUserIDByUsername: username not found: %w", ErrUserNotFound)
 	} else if err != nil {
 		return "", fmt.Errorf("getUserIDByUsername: error scanning row: %w", err)
+	}
+	return userID, nil
+}
+
+func (s *Storage) AddOrder(ctx context.Context, order models.APIAddOrderRequest) error {
+	query := "INSERT INTO orders (order_id, user_id) VALUES ($1, $2)"
+	_, err := s.DB.ExecContext(ctx, query, order.OrderNumber, order.UserID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == pgerrcode.UniqueViolation {
+				userID, err := s.getUserID(ctx, order.OrderNumber)
+				if err != nil {
+					return fmt.Errorf("addOrder: %w", err)
+				}
+
+				if userID == order.UserID {
+					return fmt.Errorf("addOrder: error adding order number: %w", ErrOrderNumberWasAlreadyAddedByThisUser)
+				} else {
+					return fmt.Errorf("addOrder: error adding order number: %w", ErrOrderNumberWasAlreadyAddedByAnotherUser)
+				}
+			}
+		}
+		return fmt.Errorf("addOrder: error adding order number: %w", err)
+	}
+	return nil
+}
+
+func (s *Storage) GetOrders(ctx context.Context, userID string) ([]models.APIGetOrderResponse, error) {
+	return nil, nil
+}
+
+func (s *Storage) getUserID(ctx context.Context, orderID string) (string, error) {
+	query := "SELECT user_id FROM orders WHERE order_id = $1"
+	row := s.DB.QueryRowContext(ctx, query, orderID)
+	var userID string
+	err := row.Scan(&userID)
+	if err != nil {
+		return "", fmt.Errorf("getUserID: error getting userID by orderID: %w", err)
 	}
 	return userID, nil
 }
