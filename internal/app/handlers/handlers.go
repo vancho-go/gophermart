@@ -90,6 +90,7 @@ func AddOrder(op OrderProcessor) http.HandlerFunc {
 		}
 
 		body, err := io.ReadAll(req.Body)
+		defer req.Body.Close()
 		if err != nil {
 			http.Error(res, "Invalid request format", http.StatusBadRequest)
 			return
@@ -116,5 +117,33 @@ func AddOrder(op OrderProcessor) http.HandlerFunc {
 			}
 		}
 		res.WriteHeader(http.StatusAccepted)
+	}
+}
+
+func GetOrdersList(op OrderProcessor) http.HandlerFunc {
+	return func(res http.ResponseWriter, req *http.Request) {
+		userID, err := auth.GetUserID(req)
+		if err != nil {
+			http.Error(res, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		orders, err := op.GetOrders(req.Context(), userID)
+		if err != nil {
+			http.Error(res, "Internal error", http.StatusInternalServerError)
+			return
+		}
+
+		if len(orders) == 0 {
+			http.Error(res, "No data", http.StatusNoContent)
+			return
+		}
+
+		res.Header().Set("Content-Type", "application/json")
+		encoder := json.NewEncoder(res)
+		if err := encoder.Encode(orders); err != nil {
+			http.Error(res, "Internal error", http.StatusInternalServerError)
+			return
+		}
 	}
 }

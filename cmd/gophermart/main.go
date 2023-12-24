@@ -40,7 +40,7 @@ func main() {
 			r.Use(auth.Middleware)
 			// не обработана 400 ошибка
 			r.Post("/orders", handlers.AddOrder(dbInstance))
-			r.Get("/orders", nil)
+			r.Get("/orders", handlers.GetOrdersList(dbInstance))
 			r.Get("/withdrawals", nil)
 		})
 

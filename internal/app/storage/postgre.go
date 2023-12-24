@@ -191,7 +191,24 @@ func (s *Storage) AddOrder(ctx context.Context, order models.APIAddOrderRequest)
 }
 
 func (s *Storage) GetOrders(ctx context.Context, userID string) ([]models.APIGetOrderResponse, error) {
-	return nil, nil
+	query := "SELECT order_id,uploaded_at,status,accrual FROM orders WHERE user_id=$1 ORDER BY uploaded_at"
+
+	rows, err := s.DB.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("getOrders: error getting orders: %w", err)
+	}
+
+	var orderList []models.APIGetOrderResponse
+	for rows.Next() {
+		var order models.APIGetOrderResponse
+		err := rows.Scan(&order.Number, &order.UploadedAt, &order.Status, &order.Accrual)
+		if err != nil {
+			return nil, fmt.Errorf("getOrders: error getting orders: %w", err)
+		}
+		orderList = append(orderList, order)
+	}
+
+	return orderList, nil
 }
 
 func (s *Storage) getUserID(ctx context.Context, orderID string) (string, error) {
