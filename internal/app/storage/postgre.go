@@ -17,6 +17,7 @@ var (
 	ErrUserNotFound                            = errors.New("user not found")
 	ErrOrderNumberWasAlreadyAddedByThisUser    = errors.New("order number has already been added by this user")
 	ErrOrderNumberWasAlreadyAddedByAnotherUser = errors.New("order number has already been added by another user")
+	ErrNotEnoughBonuses                        = errors.New("not enough bonuses to use for order")
 )
 
 type Storage struct {
@@ -64,7 +65,9 @@ func createIfNotExists(db *sql.DB) error {
 		CREATE TABLE IF NOT EXISTS withdrawals (
 		    user_id VARCHAR REFERENCES users(user_id) ON DELETE CASCADE NOT NULL,
 		    order_id VARCHAR REFERENCES orders(order_id) NOT NULL,
-		    sum NUMERIC(20, 2) NOT NULL CHECK (sum >=0)
+		    sum NUMERIC(20, 2) NOT NULL CHECK (sum >=0),
+		    processed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		    UNIQUE(order_id)
 		);
 `
 
@@ -101,10 +104,29 @@ func (s *Storage) RegisterUser(ctx context.Context, username, password string) (
 		return "", fmt.Errorf("register: user register error: %w", err)
 	}
 
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		err = fmt.Errorf("registerUser: transaction error: %w", err)
+		return "", err
+	}
+	defer tx.Rollback()
+
 	query := "INSERT INTO users (user_id, login, password) VALUES ($1,$2,$3)"
-	_, err = s.DB.ExecContext(ctx, query, userID, username, hashedPassword)
+	_, err = tx.ExecContext(ctx, query, userID, username, hashedPassword)
 	if err != nil {
 		return "", fmt.Errorf("register: user register error: %w", err)
+	}
+
+	query = "INSERT INTO balances (user_id) VALUES ($1)"
+	_, err = tx.ExecContext(ctx, query, userID)
+	if err != nil {
+		return "", fmt.Errorf("register: error adding balance wallet: %w", err)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		err = fmt.Errorf("register: error committing transaction: %w", err)
+		return "", err
 	}
 
 	return userID, nil
@@ -269,6 +291,46 @@ func (s *Storage) GetCurrentBonusesAmount(ctx context.Context, userID string) (m
 	return bonusesResponse, nil
 }
 
-func (s *Storage) UseBonuses(ctx context.Context, request models.APIUseBonusesRequest) (err error) {
+func (s *Storage) UseBonuses(ctx context.Context, request models.APIUseBonusesRequest, userID string) (err error) {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		err = fmt.Errorf("useBonuses: transaction error: %w", err)
+		return err
+	}
+	defer tx.Rollback()
+
+	var current float64
+	query := "SELECT current FROM balances where user_id=$1"
+	rowSum := tx.QueryRowContext(ctx, query, userID)
+	err = rowSum.Scan(&current)
+	if err != nil {
+		err = fmt.Errorf("useBonuses: error getting current bonuses amount: %w", err)
+		return err
+	}
+
+	dif := current - request.Sum
+
+	if dif < 0 {
+		return fmt.Errorf("useBonuses: %w", ErrNotEnoughBonuses)
+	}
+
+	query = "UPDATE balances SET current=$1 WHERE user_id=$2"
+	_, err = tx.ExecContext(ctx, query, dif, userID)
+	if err != nil {
+		err = fmt.Errorf("useBonuses: error updating current bonuses amount: %w", err)
+		return err
+	}
+
+	query = "INSERT INTO withdrawals (user_id,order_id,sum) VALUES ($1,$2,$3)"
+	_, err = tx.ExecContext(ctx, query, userID, request.OrderNumber, request.Sum)
+	if err != nil {
+		err = fmt.Errorf("useBonuses: error inserting data to withdrawals: %w", err)
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		err = fmt.Errorf("useBonuses: error committing transaction: %w", err)
+		return err
+	}
 	return nil
 }

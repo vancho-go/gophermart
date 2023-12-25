@@ -23,7 +23,7 @@ type OrderProcessor interface {
 
 type BonusesProcessor interface {
 	GetCurrentBonusesAmount(ctx context.Context, userID string) (bonuses models.APIGetBonusesAmountResponse, err error)
-	UseBonuses(ctx context.Context, request models.APIUseBonusesRequest) (err error)
+	UseBonuses(ctx context.Context, request models.APIUseBonusesRequest, userID string) (err error)
 }
 
 func RegisterUser(ua UserAuthenticator) http.HandlerFunc {
@@ -173,5 +173,40 @@ func GetBonusesAmount(bp BonusesProcessor) http.HandlerFunc {
 			return
 		}
 
+	}
+}
+
+func WithdrawBonuses(bp BonusesProcessor) http.HandlerFunc {
+	return func(res http.ResponseWriter, req *http.Request) {
+		userID, err := auth.GetUserID(req)
+		if err != nil {
+			http.Error(res, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		var request models.APIUseBonusesRequest
+		decoder := json.NewDecoder(req.Body)
+		if err := decoder.Decode(&request); err != nil {
+			http.Error(res, "Invalid request format", http.StatusInternalServerError)
+			return
+		}
+		defer req.Body.Close()
+
+		ok, err := isOrderNumberValid(request.OrderNumber)
+		if !ok || err != nil {
+			http.Error(res, "Incorrect order number format", http.StatusUnprocessableEntity)
+			return
+		}
+
+		err = bp.UseBonuses(req.Context(), request, userID)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotEnoughBonuses) {
+				http.Error(res, "Not enough bonuses", http.StatusPaymentRequired)
+				return
+			} else {
+				http.Error(res, "Internal error", http.StatusInternalServerError)
+				return
+			}
+		}
 	}
 }
