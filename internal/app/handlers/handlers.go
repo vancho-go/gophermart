@@ -26,6 +26,10 @@ type BonusesProcessor interface {
 	UseBonuses(ctx context.Context, request models.APIUseBonusesRequest, userID string) (err error)
 }
 
+type WithdrawalsProcessor interface {
+	GetWithdrawalsHistory(ctx context.Context, userID string) (withdrawals []models.APIGetWithdrawalsHistoryResponse, err error)
+}
+
 func RegisterUser(ua UserAuthenticator) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		var request models.APIRegisterRequest
@@ -207,6 +211,33 @@ func WithdrawBonuses(bp BonusesProcessor) http.HandlerFunc {
 				http.Error(res, "Internal error", http.StatusInternalServerError)
 				return
 			}
+		}
+	}
+}
+
+func GetWithdrawals(wp WithdrawalsProcessor) http.HandlerFunc {
+	return func(res http.ResponseWriter, req *http.Request) {
+		userID, err := auth.GetUserID(req)
+		if err != nil {
+			http.Error(res, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		response, err := wp.GetWithdrawalsHistory(req.Context(), userID)
+		if err != nil {
+			if errors.Is(err, storage.ErrEmptyWithdrawalHistory) {
+				http.Error(res, "No withdrawals", http.StatusNoContent)
+				return
+			} else {
+				http.Error(res, "Internal error", http.StatusInternalServerError)
+				return
+			}
+		}
+		res.Header().Set("Content-Type", "application/json")
+		encoder := json.NewEncoder(res)
+		if err := encoder.Encode(response); err != nil {
+			http.Error(res, "Internal error", http.StatusInternalServerError)
+			return
 		}
 	}
 }

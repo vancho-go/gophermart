@@ -18,6 +18,7 @@ var (
 	ErrOrderNumberWasAlreadyAddedByThisUser    = errors.New("order number has already been added by this user")
 	ErrOrderNumberWasAlreadyAddedByAnotherUser = errors.New("order number has already been added by another user")
 	ErrNotEnoughBonuses                        = errors.New("not enough bonuses to use for order")
+	ErrEmptyWithdrawalHistory                  = errors.New("no withdrawals for this user")
 )
 
 type Storage struct {
@@ -333,4 +334,30 @@ func (s *Storage) UseBonuses(ctx context.Context, request models.APIUseBonusesRe
 		return err
 	}
 	return nil
+}
+
+func (s *Storage) GetWithdrawalsHistory(ctx context.Context, userID string) ([]models.APIGetWithdrawalsHistoryResponse, error) {
+	query := "SELECT order_id,sum,processed_at FROM withdrawals WHERE user_id=$1 ORDER BY processed_at"
+
+	rows, err := s.DB.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("getWithdrawalsHistory: error getting withdrawal history: %w", err)
+	}
+
+	var withdrawalsHistory []models.APIGetWithdrawalsHistoryResponse
+	for rows.Next() {
+		var withdrawalHistory models.APIGetWithdrawalsHistoryResponse
+		err = rows.Scan(&withdrawalHistory.Order, &withdrawalHistory.Sum, &withdrawalHistory.ProcessedAt)
+		if err != nil {
+			return nil, fmt.Errorf("getWithdrawalsHistory: error getting orders: %w", err)
+		}
+		withdrawalsHistory = append(withdrawalsHistory, withdrawalHistory)
+	}
+
+	if len(withdrawalsHistory) == 0 {
+		return withdrawalsHistory, fmt.Errorf("getWithdrawalsHistory: %w", ErrEmptyWithdrawalHistory)
+	}
+
+	return withdrawalsHistory, nil
+
 }

@@ -41,7 +41,7 @@ func main() {
 			// не обработана 400 ошибка
 			r.Post("/orders", handlers.AddOrder(dbInstance))
 			r.Get("/orders", handlers.GetOrdersList(dbInstance))
-			r.Get("/withdrawals", nil)
+			r.Get("/withdrawals", handlers.GetWithdrawals(dbInstance))
 		})
 
 		r.Route("/balance", func(r chi.Router) {
