@@ -21,6 +21,11 @@ type OrderProcessor interface {
 	GetOrders(ctx context.Context, userID string) (orders []models.APIGetOrderResponse, err error)
 }
 
+type BonusesProcessor interface {
+	GetCurrentBonusesAmount(ctx context.Context, userID string) (bonuses models.APIGetBonusesAmountResponse, err error)
+	UseBonuses(ctx context.Context, request models.APIUseBonusesRequest) (err error)
+}
+
 func RegisterUser(ua UserAuthenticator) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		var request models.APIRegisterRequest
@@ -145,5 +150,28 @@ func GetOrdersList(op OrderProcessor) http.HandlerFunc {
 			http.Error(res, "Internal error", http.StatusInternalServerError)
 			return
 		}
+	}
+}
+
+func GetBonusesAmount(bp BonusesProcessor) http.HandlerFunc {
+	return func(res http.ResponseWriter, req *http.Request) {
+		userID, err := auth.GetUserID(req)
+		if err != nil {
+			http.Error(res, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		bonuses, err := bp.GetCurrentBonusesAmount(req.Context(), userID)
+		if err != nil {
+			http.Error(res, "Internal error", http.StatusInternalServerError)
+			return
+		}
+		res.Header().Set("Content-Type", "application/json")
+		encoder := json.NewEncoder(res)
+		if err := encoder.Encode(bonuses); err != nil {
+			http.Error(res, "Internal error", http.StatusInternalServerError)
+			return
+		}
+
 	}
 }

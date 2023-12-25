@@ -55,7 +55,16 @@ func createIfNotExists(db *sql.DB) error {
 		    user_id VARCHAR REFERENCES users(user_id) ON DELETE CASCADE NOT NULL,
 		    uploaded_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			status VARCHAR NOT NULL DEFAULT 'NEW',
-			accrual INTEGER DEFAULT NULL
+			accrual NUMERIC(20, 2) DEFAULT NULL
+		);
+		CREATE TABLE IF NOT EXISTS balances (
+			user_id VARCHAR REFERENCES users(user_id) ON DELETE CASCADE NOT NULL,
+			current NUMERIC(20, 2) DEFAULT 0.0 CHECK (current >=0)
+		);
+		CREATE TABLE IF NOT EXISTS withdrawals (
+		    user_id VARCHAR REFERENCES users(user_id) ON DELETE CASCADE NOT NULL,
+		    order_id VARCHAR REFERENCES orders(order_id) NOT NULL,
+		    sum NUMERIC(20, 2) NOT NULL CHECK (sum >=0)
 		);
 `
 
@@ -220,4 +229,46 @@ func (s *Storage) getUserID(ctx context.Context, orderID string) (string, error)
 		return "", fmt.Errorf("getUserID: error getting userID by orderID: %w", err)
 	}
 	return userID, nil
+}
+
+func (s *Storage) GetCurrentBonusesAmount(ctx context.Context, userID string) (models.APIGetBonusesAmountResponse, error) {
+	var bonusesResponse models.APIGetBonusesAmountResponse
+
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		err = fmt.Errorf("getCurrentBonusesAmount: transaction error: %w", err)
+		return models.APIGetBonusesAmountResponse{}, err
+	}
+	defer tx.Rollback()
+
+	query := "SELECT current FROM balances WHERE user_id=$1"
+	rowCurrent := tx.QueryRowContext(ctx, query, userID)
+	err = rowCurrent.Scan(&bonusesResponse.Current)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			bonusesResponse.Current = 0
+		} else {
+			err = fmt.Errorf("getCurrentBonusesAmount: error scanning current amount: %w", err)
+			return models.APIGetBonusesAmountResponse{}, err
+		}
+	}
+
+	query = "SELECT COALESCE(SUM(sum),0.0)::float as sum FROM withdrawals WHERE user_id=$1"
+	rowSum := tx.QueryRowContext(ctx, query, userID)
+	err = rowSum.Scan(&bonusesResponse.Withdrawn)
+	if err != nil {
+		err = fmt.Errorf("getCurrentBonusesAmount: error scanning withdrawn amount: %w", err)
+		return models.APIGetBonusesAmountResponse{}, err
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		err = fmt.Errorf("getCurrentBonusesAmount: error committing transaction: %w", err)
+		return models.APIGetBonusesAmountResponse{}, err
+	}
+	return bonusesResponse, nil
+}
+
+func (s *Storage) UseBonuses(ctx context.Context, request models.APIUseBonusesRequest) (err error) {
+	return nil
 }
