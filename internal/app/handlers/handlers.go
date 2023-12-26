@@ -30,6 +30,11 @@ type WithdrawalsProcessor interface {
 	GetWithdrawalsHistory(ctx context.Context, userID string) (withdrawals []models.APIGetWithdrawalsHistoryResponse, err error)
 }
 
+func getUserIDFromContext(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(auth.UserIDContextKey).(string)
+	return userID, ok
+}
+
 func RegisterUser(ua UserAuthenticator) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		var request models.APIRegisterRequest
@@ -92,8 +97,8 @@ func AuthenticateUser(ua UserAuthenticator) http.HandlerFunc {
 
 func AddOrder(op OrderProcessor) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
-		userID, err := auth.GetUserID(req)
-		if err != nil {
+		userID, ok := getUserIDFromContext(req.Context())
+		if !ok {
 			http.Error(res, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -107,7 +112,7 @@ func AddOrder(op OrderProcessor) http.HandlerFunc {
 
 		orderNumber := string(body)
 
-		ok, err := isOrderNumberValid(orderNumber)
+		ok, err = isOrderNumberValid(orderNumber)
 		if !ok || err != nil {
 			http.Error(res, "Incorrect order number format", http.StatusUnprocessableEntity)
 			return
@@ -131,8 +136,8 @@ func AddOrder(op OrderProcessor) http.HandlerFunc {
 
 func GetOrdersList(op OrderProcessor) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
-		userID, err := auth.GetUserID(req)
-		if err != nil {
+		userID, ok := getUserIDFromContext(req.Context())
+		if !ok {
 			http.Error(res, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -159,8 +164,8 @@ func GetOrdersList(op OrderProcessor) http.HandlerFunc {
 
 func GetBonusesAmount(bp BonusesProcessor) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
-		userID, err := auth.GetUserID(req)
-		if err != nil {
+		userID, ok := getUserIDFromContext(req.Context())
+		if !ok {
 			http.Error(res, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -182,8 +187,8 @@ func GetBonusesAmount(bp BonusesProcessor) http.HandlerFunc {
 
 func WithdrawBonuses(bp BonusesProcessor) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
-		userID, err := auth.GetUserID(req)
-		if err != nil {
+		userID, ok := getUserIDFromContext(req.Context())
+		if !ok {
 			http.Error(res, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -217,8 +222,8 @@ func WithdrawBonuses(bp BonusesProcessor) http.HandlerFunc {
 
 func GetWithdrawals(wp WithdrawalsProcessor) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
-		userID, err := auth.GetUserID(req)
-		if err != nil {
+		userID, ok := getUserIDFromContext(req.Context())
+		if !ok {
 			http.Error(res, "Unauthorized", http.StatusUnauthorized)
 			return
 		}

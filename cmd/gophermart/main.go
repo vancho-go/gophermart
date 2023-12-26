@@ -46,6 +46,7 @@ func main() {
 
 		r.Route("/balance", func(r chi.Router) {
 			r.Group(func(r chi.Router) {
+				r.Use(auth.Middleware)
 				r.Get("/", handlers.GetBonusesAmount(dbInstance))
 				r.Post("/withdraw", handlers.WithdrawBonuses(dbInstance))
 			})

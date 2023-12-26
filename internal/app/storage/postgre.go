@@ -226,6 +226,12 @@ func (s *Storage) GetOrders(ctx context.Context, userID string) ([]models.APIGet
 	query := "SELECT order_id,uploaded_at,status,accrual FROM orders WHERE user_id=$1 ORDER BY uploaded_at"
 
 	rows, err := s.DB.QueryContext(ctx, query, userID)
+
+	if rows.Err() != nil {
+		return []models.APIGetOrderResponse{}, fmt.Errorf("getOrders: error getting orders: %w", rows.Err())
+	}
+	defer rows.Close()
+
 	if err != nil {
 		return nil, fmt.Errorf("getOrders: error getting orders: %w", err)
 	}
@@ -268,7 +274,7 @@ func (s *Storage) GetCurrentBonusesAmount(ctx context.Context, userID string) (m
 	rowCurrent := tx.QueryRowContext(ctx, query, userID)
 	err = rowCurrent.Scan(&bonusesResponse.Current)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			bonusesResponse.Current = 0
 		} else {
 			err = fmt.Errorf("getCurrentBonusesAmount: error scanning current amount: %w", err)
@@ -340,6 +346,11 @@ func (s *Storage) GetWithdrawalsHistory(ctx context.Context, userID string) ([]m
 	query := "SELECT order_id,sum,processed_at FROM withdrawals WHERE user_id=$1 ORDER BY processed_at"
 
 	rows, err := s.DB.QueryContext(ctx, query, userID)
+	if rows.Err() != nil {
+		return []models.APIGetWithdrawalsHistoryResponse{}, fmt.Errorf("getWithdrawalsHistory: error getting orders: %w", rows.Err())
+	}
+	defer rows.Close()
+
 	if err != nil {
 		return nil, fmt.Errorf("getWithdrawalsHistory: error getting withdrawal history: %w", err)
 	}
