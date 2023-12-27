@@ -427,7 +427,14 @@ func (s *Storage) getNotCalculatedOrderNumbers(ctx context.Context) (<-chan stri
 
 	query := "SELECT order_id FROM orders WHERE status NOT IN ('INVALID', 'PROCESSED')"
 	rows, err := s.DB.Query(query)
+
+	if rows.Err() != nil {
+		log.Println(err)
+		//todo
+	}
+
 	if err != nil {
+		log.Println(err)
 		//todo
 	}
 	go func() {
@@ -436,6 +443,7 @@ func (s *Storage) getNotCalculatedOrderNumbers(ctx context.Context) (<-chan stri
 			var orderNumber string
 			if err := rows.Scan(&orderNumber); err != nil {
 				//todo
+				log.Println(err)
 			}
 			select {
 			case <-ctx.Done():

@@ -43,7 +43,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	go periodicUpdateExecutor(ctx, time.Second*3, configuration.AccrualSystemAddress, dbInstance.HandleOrderNumbers)
+	go periodicUpdateExecutor(ctx, time.Millisecond, configuration.AccrualSystemAddress, dbInstance.HandleOrderNumbers)
 
 	r := chi.NewRouter()
 
