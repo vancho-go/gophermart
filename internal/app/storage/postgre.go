@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/jackc/pgerrcode"
@@ -10,6 +11,13 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/vancho-go/gophermart/internal/app/auth"
 	"github.com/vancho-go/gophermart/internal/app/models"
+	"io"
+	"log"
+	"net/http"
+	url2 "net/url"
+	"runtime"
+	"sync"
+	"time"
 )
 
 var (
@@ -371,4 +379,231 @@ func (s *Storage) GetWithdrawalsHistory(ctx context.Context, userID string) ([]m
 
 	return withdrawalsHistory, nil
 
+}
+
+func (s *Storage) HandleOrderNumbers(ctx context.Context, accrualSystemAddress string) {
+	// Отсюда будут запускаться задачи на обновление статуса заказа
+
+	select {
+	case <-ctx.Done():
+		//todo
+		fmt.Println("updateDNSRecords: update task cancelled by context")
+	default:
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		orderNumbersChannel, err := s.getNotCalculatedOrderNumbers(ctx)
+		if err != nil {
+			//todo
+			log.Println(err)
+			return
+		}
+
+		var stageUpdateOrderStatusChannels []<-chan string
+		var updateErrors []<-chan error
+
+		for i := 0; i < runtime.NumCPU(); i++ {
+			updateOrderStatusChannel, updateOrderStatusErrors, err := s.prepareAndUpdateOrderStatus(ctx, orderNumbersChannel, accrualSystemAddress)
+			if err != nil {
+				//todo
+				log.Println(err)
+				return
+			}
+			stageUpdateOrderStatusChannels = append(stageUpdateOrderStatusChannels, updateOrderStatusChannel)
+			updateErrors = append(updateErrors, updateOrderStatusErrors)
+		}
+		stageUpdateOrderStatusMerged := mergeChannels(ctx, stageUpdateOrderStatusChannels...)
+		errorsMerged := mergeChannels(ctx, updateErrors...)
+
+		orderStatusConsumer(ctx, stageUpdateOrderStatusMerged, errorsMerged)
+	}
+
+}
+
+func (s *Storage) getNotCalculatedOrderNumbers(ctx context.Context) (<-chan string, error) {
+	// producer
+
+	outputChannel := make(chan string)
+
+	query := "SELECT order_id FROM orders WHERE status NOT IN ('INVALID', 'PROCESSED')"
+	rows, err := s.DB.Query(query)
+	if err != nil {
+		//todo
+	}
+	go func() {
+		defer close(outputChannel)
+		for rows.Next() {
+			var orderNumber string
+			if err := rows.Scan(&orderNumber); err != nil {
+				//todo
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case outputChannel <- orderNumber:
+			}
+		}
+	}()
+
+	return outputChannel, nil
+}
+
+func (s *Storage) prepareAndUpdateOrderStatus(ctx context.Context, orderNumbers <-chan string, accrualSystemAddress string) (<-chan string, <-chan error, error) {
+	outChannel := make(chan string)
+	errorChannel := make(chan error)
+
+	go func() {
+		defer close(outChannel)
+		defer close(errorChannel)
+
+		select {
+		case <-ctx.Done():
+			return
+		case orderNumber, ok := <-orderNumbers:
+			if ok {
+				ctxWTO, cancel := context.WithTimeout(ctx, time.Second*2)
+				defer cancel()
+
+				err := s.updateOrderStatus(ctxWTO, orderNumber, accrualSystemAddress)
+				if err != nil {
+					errorChannel <- err
+				} else {
+					outChannel <- fmt.Sprintf("prepareAndUpdateOrderStatus: order '%s' updated", orderNumber)
+				}
+			} else {
+				return
+			}
+		}
+	}()
+	return outChannel, errorChannel, nil
+}
+
+func (s *Storage) updateOrderStatus(ctx context.Context, orderNumber string, accrualSystemAddress string) error {
+	orderInfo, err := getOrderInfo(ctx, orderNumber, accrualSystemAddress)
+	if err != nil {
+		return fmt.Errorf("updateOrderStatus: error getting order info: %w", err)
+	}
+
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		err = fmt.Errorf("updateOrderStatus: error beginning transaction: %w", err)
+		return err
+	}
+	defer tx.Rollback()
+
+	query := "UPDATE orders SET status = $1 WHERE order_id = $2"
+	_, err = tx.ExecContext(ctx, query, orderInfo.Status, orderNumber)
+	if err != nil {
+		return fmt.Errorf("updateOrderStatus: error updating status for order %s: %w", orderNumber, err)
+	}
+	if orderInfo.Accrual > 0 {
+		query = "UPDATE balances SET current = current + $2 WHERE user_id = (SELECT user_id FROM orders WHERE order_id = $1) RETURNING current"
+		_, err = tx.ExecContext(ctx, query, orderInfo.Status, orderNumber)
+		if err != nil {
+			return fmt.Errorf("updateOrderStatus: error updating balance for order %s: %w", orderNumber, err)
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		err = fmt.Errorf("updateOrderStatus: error committing transaction: %w", err)
+		return err
+	}
+
+	return nil
+}
+
+func getOrderInfo(ctx context.Context, orderNumber string, accrualSystemAddress string) (*models.APIOrderInfoResponse, error) {
+	url, err := url2.JoinPath(accrualSystemAddress, "/api/orders/", orderNumber)
+	if err != nil {
+		return nil, fmt.Errorf("getOrderInfo: error joining path: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getOrderInfo: error with request: %w", err)
+	}
+
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("getOrderInfo: error get: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var orderInfo models.APIOrderInfoResponse
+		if err := json.NewDecoder(resp.Body).Decode(&orderInfo); err != nil {
+			return nil, fmt.Errorf("getOrderInfo: error decoding JSON resp: %w", err)
+		}
+		return &orderInfo, nil
+	case http.StatusNoContent:
+		return nil, fmt.Errorf("getOrderInfo: order %s not registered in the system", orderNumber)
+	case http.StatusTooManyRequests:
+		retryAfter := resp.Header.Get("Retry-After")
+		return nil, fmt.Errorf("getOrderInfo: rate limit exceeded, retry after %s seconds", retryAfter)
+	case http.StatusInternalServerError:
+		return nil, fmt.Errorf("getOrderInfo: interna; server error")
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("getOrderInfo: unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+}
+
+func mergeChannels[T any](ctx context.Context, ce ...<-chan T) <-chan T {
+	var wg sync.WaitGroup
+	out := make(chan T)
+
+	output := func(c <-chan T) {
+		defer wg.Done()
+		for n := range c {
+			select {
+			case out <- n:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}
+
+	wg.Add(len(ce))
+	for _, c := range ce {
+		go output(c)
+
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
+}
+
+func orderStatusConsumer(ctx context.Context, orderInfoResult <-chan string, orderInfoErrors <-chan error) {
+	for {
+		select {
+		case <-ctx.Done():
+			//todo
+			log.Println(ctx.Err().Error())
+			return
+		case err, ok := <-orderInfoErrors:
+			if ok {
+				//todo
+				log.Println(err.Error())
+			}
+
+		case fqdn, ok := <-orderInfoResult:
+			if ok {
+				//todo
+				log.Println(fqdn)
+			} else {
+				return
+			}
+
+		}
+
+	}
 }

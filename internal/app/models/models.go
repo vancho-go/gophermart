@@ -39,3 +39,9 @@ type APIGetWithdrawalsHistoryResponse struct {
 	Sum         float64   `json:"sum"`
 	ProcessedAt time.Time `json:"Processed_at"`
 }
+
+type APIOrderInfoResponse struct {
+	Order   string  `json:"order"`
+	Status  string  `json:"status"`
+	Accrual float64 `json:"accrual,omitempty"`
+}

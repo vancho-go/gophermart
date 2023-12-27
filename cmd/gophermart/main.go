@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/vancho-go/gophermart/internal/app/auth"
@@ -9,7 +10,19 @@ import (
 	"github.com/vancho-go/gophermart/internal/app/storage"
 	"log"
 	"net/http"
+	"time"
 )
+
+func periodicUpdateExecutor(ctx context.Context, interval time.Duration, accrualSystemAddress string, task func(context.Context, string)) {
+	for {
+		task(ctx, accrualSystemAddress)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		}
+	}
+}
 
 func main() {
 	configuration, err := config.BuildServer()
@@ -28,6 +41,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("error initialising database: %s", err.Error())
 	}
+
+	ctx := context.Background()
+	go periodicUpdateExecutor(ctx, time.Second*3, configuration.AccrualSystemAddress, dbInstance.HandleOrderNumbers)
 
 	r := chi.NewRouter()
 
