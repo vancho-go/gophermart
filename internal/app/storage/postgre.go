@@ -505,8 +505,8 @@ func (s *Storage) updateOrderStatus(ctx context.Context, orderNumber string, acc
 		return fmt.Errorf("updateOrderStatus: error updating status for order %s: %w", orderNumber, err)
 	}
 	if orderInfo.Accrual > 0 {
-		query = "UPDATE balances SET current = current + $2 WHERE user_id = (SELECT user_id FROM orders WHERE order_id = $1) RETURNING current"
-		_, err = tx.ExecContext(ctx, query, orderInfo.Status, orderNumber)
+		query = "UPDATE balances SET current = current + $1 WHERE user_id = (SELECT user_id FROM orders WHERE order_id = $2) RETURNING current"
+		_, err = tx.ExecContext(ctx, query, orderInfo.Accrual, orderNumber)
 		if err != nil {
 			return fmt.Errorf("updateOrderStatus: error updating balance for order %s: %w", orderNumber, err)
 		}
