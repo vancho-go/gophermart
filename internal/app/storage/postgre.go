@@ -499,8 +499,8 @@ func (s *Storage) updateOrderStatus(ctx context.Context, orderNumber string, acc
 	}
 	defer tx.Rollback()
 
-	query := "UPDATE orders SET status = $1 WHERE order_id = $2"
-	_, err = tx.ExecContext(ctx, query, orderInfo.Status, orderNumber)
+	query := "UPDATE orders SET status = $1, accrual = $2 WHERE order_id = $3"
+	_, err = tx.ExecContext(ctx, query, orderInfo.Status, orderInfo.Accrual, orderNumber)
 	if err != nil {
 		return fmt.Errorf("updateOrderStatus: error updating status for order %s: %w", orderNumber, err)
 	}
