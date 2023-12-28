@@ -74,7 +74,7 @@ func createIfNotExists(db *sql.DB) error {
 		);
 		CREATE TABLE IF NOT EXISTS withdrawals (
 		    user_id VARCHAR REFERENCES users(user_id) ON DELETE CASCADE NOT NULL,
-		    order_id VARCHAR REFERENCES orders(order_id) NOT NULL,
+		    order_id VARCHAR NOT NULL,
 		    sum NUMERIC(20, 2) NOT NULL CHECK (sum >=0),
 		    processed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		    UNIQUE(order_id)
