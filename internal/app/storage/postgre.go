@@ -10,9 +10,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/vancho-go/gophermart/internal/app/auth"
+	"github.com/vancho-go/gophermart/internal/app/logger"
 	"github.com/vancho-go/gophermart/internal/app/models"
+	"go.uber.org/zap"
 	"io"
-	"log"
 	"net/http"
 	url2 "net/url"
 	"runtime"
@@ -381,21 +382,19 @@ func (s *Storage) GetWithdrawalsHistory(ctx context.Context, userID string) ([]m
 
 }
 
-func (s *Storage) HandleOrderNumbers(ctx context.Context, accrualSystemAddress string) {
+func (s *Storage) HandleOrderNumbers(ctx context.Context, accrualSystemAddress string, logger logger.Logger) {
 	// Отсюда будут запускаться задачи на обновление статуса заказа
 
 	select {
 	case <-ctx.Done():
-		//todo
-		fmt.Println("updateDNSRecords: update task cancelled by context")
+		logger.Info("handleOrderNumbers: update task cancelled by context")
 	default:
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
-		orderNumbersChannel, err := s.getNotCalculatedOrderNumbers(ctx)
+		orderNumbersChannel, err := s.getNotCalculatedOrderNumbers(ctx, logger)
 		if err != nil {
-			//todo
-			log.Println(err)
+			logger.Error("handleOrderNumbers:", zap.Error(err))
 			return
 		}
 
@@ -405,8 +404,7 @@ func (s *Storage) HandleOrderNumbers(ctx context.Context, accrualSystemAddress s
 		for i := 0; i < runtime.NumCPU(); i++ {
 			updateOrderStatusChannel, updateOrderStatusErrors, err := s.prepareAndUpdateOrderStatus(ctx, orderNumbersChannel, accrualSystemAddress)
 			if err != nil {
-				//todo
-				log.Println(err)
+				logger.Error("handleOrderNumbers:", zap.Error(err))
 				return
 			}
 			stageUpdateOrderStatusChannels = append(stageUpdateOrderStatusChannels, updateOrderStatusChannel)
@@ -415,12 +413,12 @@ func (s *Storage) HandleOrderNumbers(ctx context.Context, accrualSystemAddress s
 		stageUpdateOrderStatusMerged := mergeChannels(ctx, stageUpdateOrderStatusChannels...)
 		errorsMerged := mergeChannels(ctx, updateErrors...)
 
-		orderStatusConsumer(ctx, stageUpdateOrderStatusMerged, errorsMerged)
+		orderStatusConsumer(ctx, stageUpdateOrderStatusMerged, errorsMerged, logger)
 	}
 
 }
 
-func (s *Storage) getNotCalculatedOrderNumbers(ctx context.Context) (<-chan string, error) {
+func (s *Storage) getNotCalculatedOrderNumbers(ctx context.Context, logger logger.Logger) (<-chan string, error) {
 	// producer
 
 	outputChannel := make(chan string)
@@ -429,12 +427,12 @@ func (s *Storage) getNotCalculatedOrderNumbers(ctx context.Context) (<-chan stri
 	rows, err := s.DB.Query(query)
 
 	if rows.Err() != nil {
-		log.Println(err)
+		logger.Error("getNotCalculatedOrderNumbers:", zap.Error(err))
 		//todo
 	}
 
 	if err != nil {
-		log.Println(err)
+		logger.Error("getNotCalculatedOrderNumbers:", zap.Error(err))
 		//todo
 	}
 	go func() {
@@ -443,7 +441,7 @@ func (s *Storage) getNotCalculatedOrderNumbers(ctx context.Context) (<-chan stri
 			var orderNumber string
 			if err := rows.Scan(&orderNumber); err != nil {
 				//todo
-				log.Println(err)
+				logger.Error("getNotCalculatedOrderNumbers:", zap.Error(err))
 			}
 			select {
 			case <-ctx.Done():
@@ -469,7 +467,7 @@ func (s *Storage) prepareAndUpdateOrderStatus(ctx context.Context, orderNumbers 
 			return
 		case orderNumber, ok := <-orderNumbers:
 			if ok {
-				ctxWTO, cancel := context.WithTimeout(ctx, time.Second*2)
+				ctxWTO, cancel := context.WithTimeout(ctx, time.Second*5)
 				defer cancel()
 
 				err := s.updateOrderStatus(ctxWTO, orderNumber, accrualSystemAddress)
@@ -590,23 +588,22 @@ func mergeChannels[T any](ctx context.Context, ce ...<-chan T) <-chan T {
 	return out
 }
 
-func orderStatusConsumer(ctx context.Context, orderInfoResult <-chan string, orderInfoErrors <-chan error) {
+func orderStatusConsumer(ctx context.Context, orderInfoResult <-chan string, orderInfoErrors <-chan error, logger logger.Logger) {
 	for {
 		select {
 		case <-ctx.Done():
-			//todo
-			log.Println(ctx.Err().Error())
+			logger.Error("orderStatusConsumer:", zap.Error(ctx.Err()))
 			return
 		case err, ok := <-orderInfoErrors:
 			if ok {
 				//todo
-				log.Println(err.Error())
+				logger.Error("orderStatusConsumer:", zap.Error(err))
 			}
 
-		case fqdn, ok := <-orderInfoResult:
+		case order, ok := <-orderInfoResult:
 			if ok {
 				//todo
-				log.Println(fqdn)
+				logger.Info("orderStatusConsumer:" + order)
 			} else {
 				return
 			}
