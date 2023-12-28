@@ -428,19 +428,16 @@ func (s *Storage) getNotCalculatedOrderNumbers(ctx context.Context, logger logge
 
 	if rows.Err() != nil {
 		logger.Error("getNotCalculatedOrderNumbers:", zap.Error(err))
-		//todo
 	}
 
 	if err != nil {
 		logger.Error("getNotCalculatedOrderNumbers:", zap.Error(err))
-		//todo
 	}
 	go func() {
 		defer close(outputChannel)
 		for rows.Next() {
 			var orderNumber string
 			if err := rows.Scan(&orderNumber); err != nil {
-				//todo
 				logger.Error("getNotCalculatedOrderNumbers:", zap.Error(err))
 			}
 			select {
@@ -596,13 +593,11 @@ func orderStatusConsumer(ctx context.Context, orderInfoResult <-chan string, ord
 			return
 		case err, ok := <-orderInfoErrors:
 			if ok {
-				//todo
 				logger.Error("orderStatusConsumer:", zap.Error(err))
 			}
 
 		case order, ok := <-orderInfoResult:
 			if ok {
-				//todo
 				logger.Info("orderStatusConsumer:" + order)
 			} else {
 				return
