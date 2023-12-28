@@ -20,7 +20,7 @@ type APIAddOrderRequest struct {
 type APIGetOrderResponse struct {
 	Number     string    `json:"number"`
 	Status     string    `json:"status"`
-	Accrual    *int      `json:"accrual,omitempty"`
+	Accrual    *float64  `json:"accrual,omitempty"`
 	UploadedAt time.Time `json:"uploaded_at"`
 }
 
