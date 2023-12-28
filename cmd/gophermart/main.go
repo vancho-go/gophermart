@@ -42,8 +42,8 @@ func main() {
 		log.Fatalf("error initialising database: %s", err.Error())
 	}
 
-	ctx := context.Background()
-	go periodicUpdateExecutor(ctx, time.Millisecond*500, configuration.AccrualSystemAddress, dbInstance.HandleOrderNumbers)
+	//ctx := context.Background()
+	//go periodicUpdateExecutor(ctx, time.Millisecond*500, configuration.AccrualSystemAddress, dbInstance.HandleOrderNumbers)
 
 	r := chi.NewRouter()
 
