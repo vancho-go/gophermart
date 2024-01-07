@@ -30,7 +30,7 @@ const orderUpdaterPeriod = time.Millisecond * 500
 func main() {
 	configuration, err := config.BuildServer()
 	if err != nil {
-		log.Fatalf("error building server configuration: %v", err)
+		log.Fatalf("error building server  configuration: %v", err)
 	}
 
 	err = auth.SetSecretKey(configuration.JWTSecretKey)
