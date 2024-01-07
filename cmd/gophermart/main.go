@@ -25,16 +25,23 @@ func periodicUpdateExecutor(ctx context.Context, interval time.Duration, accrual
 	}
 }
 
+const orderUpdaterPeriod = time.Millisecond * 500
+
 func main() {
 	configuration, err := config.BuildServer()
 	if err != nil {
-		log.Fatalf("error building server configuration: %s", err.Error())
+		log.Fatalf("error building server configuration: %v", err)
+	}
+
+	err = auth.SetSecretKey(configuration.JWTSecretKey)
+	if err != nil {
+		log.Fatalf("failed setting jwt auth key: %v", err)
 	}
 
 	logger, err := logger.NewLogger("debug")
 
 	if err != nil {
-		log.Fatalf("failed to create logger: %s", err.Error())
+		log.Fatalf("failed to create logger: %v", err)
 	}
 
 	dbInstance, err := storage.Initialize(configuration.DatabaseURI)
@@ -44,7 +51,7 @@ func main() {
 
 	logger.Info("starting periodic update order numbers executor")
 	ctx := context.Background()
-	go periodicUpdateExecutor(ctx, time.Millisecond*500, configuration.AccrualSystemAddress, dbInstance.HandleOrderNumbers, logger)
+	go periodicUpdateExecutor(ctx, orderUpdaterPeriod, configuration.AccrualSystemAddress, dbInstance.HandleOrderNumbers, logger)
 
 	logger.Info("running server", zap.String("address", configuration.ServerRunAddress))
 	r := chi.NewRouter()
@@ -56,7 +63,6 @@ func main() {
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(auth.Middleware)
-			// не обработана 400 ошибка
 			r.Post("/orders", handlers.AddOrder(dbInstance, logger))
 			r.Get("/orders", handlers.GetOrdersList(dbInstance, logger))
 			r.Get("/withdrawals", handlers.GetWithdrawals(dbInstance, logger))

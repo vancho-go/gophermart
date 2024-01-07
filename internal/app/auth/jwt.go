@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	tokenExp  = time.Hour * 24
-	secretKey = "temp_secret_key"
+	tokenExp = time.Hour * 24
 )
+
+var secretKey string
 
 type claims struct {
 	jwt.RegisteredClaims
@@ -20,6 +21,11 @@ type claims struct {
 
 func newClaims() *claims {
 	return &claims{}
+}
+
+func SetSecretKey(key string) error {
+	secretKey = key
+	return nil
 }
 
 func GenerateUserID() string {
@@ -62,8 +68,8 @@ func GetUserID(req *http.Request) (string, error) {
 
 	tokenString := cookie.Value
 
-	if !isTokenValid(tokenString) {
-		return "", fmt.Errorf("getUserID: token is not valid : %w", err)
+	if err = isTokenValid(tokenString); err != nil {
+		return "", fmt.Errorf("getUserID: error validating token : %w", err)
 	}
 
 	claims := newClaims()
@@ -76,7 +82,7 @@ func GetUserID(req *http.Request) (string, error) {
 	return claims.UserID, nil
 }
 
-func isTokenValid(tokenString string) bool {
+func isTokenValid(tokenString string) error {
 	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("isTokenValid: unexpected signing method: %v", t.Header["alg"])
@@ -84,7 +90,10 @@ func isTokenValid(tokenString string) bool {
 		return []byte(secretKey), nil
 	})
 	if err != nil {
-		return false
+		return err
 	}
-	return token.Valid
+	if !token.Valid {
+		return fmt.Errorf("isTokenValid: token is not valid")
+	}
+	return nil
 }

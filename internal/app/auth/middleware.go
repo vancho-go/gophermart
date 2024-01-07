@@ -5,9 +5,11 @@ import (
 	"net/http"
 )
 
-type contextKey string
+type contextKey int
 
-const UserIDContextKey contextKey = "userID"
+const (
+	UserIDContextKey contextKey = iota
+)
 
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {

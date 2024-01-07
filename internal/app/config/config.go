@@ -9,6 +9,7 @@ type ServerConfig struct {
 	ServerRunAddress     string
 	DatabaseURI          string
 	AccrualSystemAddress string
+	JWTSecretKey         string
 }
 
 type serverConfigBuilder struct {
@@ -36,6 +37,11 @@ func (sc *serverConfigBuilder) withAccrualSystemAddress(accrualSystemAddress str
 	return sc
 }
 
+func (sc *serverConfigBuilder) withJWTSecretKey(JWTSecretKey string) *serverConfigBuilder {
+	sc.serviceConfig.JWTSecretKey = JWTSecretKey
+	return sc
+}
+
 func (sc *serverConfigBuilder) build() ServerConfig {
 	return sc.serviceConfig
 }
@@ -45,28 +51,35 @@ func BuildServer() (ServerConfig, error) {
 		serverRunAddress     string
 		databaseURI          string
 		accrualSystemAddress string
+		jwtSecretKey         string
 	)
 
 	flag.StringVar(&serverRunAddress, "a", "localhost:8080", "address:port to run server")
-	flag.StringVar(&databaseURI, "d", "host=localhost port=5432 user=vancho password=vancho_pswd dbname=vancho_db sslmode=disable", "connection string for driver to establish connection to he DB")
+	flag.StringVar(&databaseURI, "d", "", "connection string for driver to establish connection to he DB")
 	flag.StringVar(&accrualSystemAddress, "r", "", "address of the accrual calculation system")
+	flag.StringVar(&jwtSecretKey, "j", "temp_secret_key", "jwt secret key")
 	flag.Parse()
 
-	if envServerRunAddress := os.Getenv("RUN_ADDRESS"); envServerRunAddress != "" {
+	if envServerRunAddress, ok := os.LookupEnv("RUN_ADDRESS"); envServerRunAddress != "" && ok {
 		serverRunAddress = envServerRunAddress
 	}
 
-	if envDatabaseURI := os.Getenv("DATABASE_URI"); envDatabaseURI != "" {
+	if envDatabaseURI, ok := os.LookupEnv("DATABASE_URI"); envDatabaseURI != "" && ok {
 		databaseURI = envDatabaseURI
 	}
 
-	if envAccrualSystemAddress := os.Getenv("ACCRUAL_SYSTEM_ADDRESS"); envAccrualSystemAddress != "" {
+	if envAccrualSystemAddress, ok := os.LookupEnv("ACCRUAL_SYSTEM_ADDRESS"); envAccrualSystemAddress != "" && ok {
 		accrualSystemAddress = envAccrualSystemAddress
+	}
+
+	if envJWTSecretKey, ok := os.LookupEnv("JWT_SECRET_KEY"); envJWTSecretKey != "" && ok {
+		jwtSecretKey = envJWTSecretKey
 	}
 
 	return newServiceConfigBuilder().
 		withServerRunAddress(serverRunAddress).
 		withDatabaseURI(databaseURI).
 		withAccrualSystemAddress(accrualSystemAddress).
+		withJWTSecretKey(jwtSecretKey).
 		build(), nil
 }

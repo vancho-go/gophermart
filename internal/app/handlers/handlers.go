@@ -43,14 +43,14 @@ func RegisterUser(ua UserAuthenticator, logger logger.Logger) http.HandlerFunc {
 
 		decoder := json.NewDecoder(req.Body)
 		if err := decoder.Decode(&request); err != nil {
-			logger.Info("registerUser:", zap.Error(err))
+			logger.Debug("registerUser:", zap.Error(err))
 			http.Error(res, "Invalid request format", http.StatusBadRequest)
 			return
 		}
 
 		userID, err := ua.RegisterUser(req.Context(), request.Login, request.Password)
 		if errors.Is(err, storage.ErrUsernameNotUnique) {
-			logger.Info("registerUser:", zap.Error(err))
+			logger.Debug("registerUser:", zap.Error(err))
 			http.Error(res, "Username is already in use", http.StatusConflict)
 			return
 		} else if err != nil {
@@ -77,18 +77,18 @@ func AuthenticateUser(ua UserAuthenticator, logger logger.Logger) http.HandlerFu
 
 		decoder := json.NewDecoder(req.Body)
 		if err := decoder.Decode(&request); err != nil {
-			logger.Info("authenticateUser:", zap.Error(err))
+			logger.Debug("authenticateUser:", zap.Error(err))
 			http.Error(res, "Invalid request format", http.StatusBadRequest)
 			return
 		}
 
 		userID, err := ua.AuthenticateUser(req.Context(), request.Login, request.Password)
 		if errors.Is(err, storage.ErrUserNotFound) {
-			logger.Info("authenticateUser:", zap.Error(err))
+			logger.Debug("authenticateUser:", zap.Error(err))
 			http.Error(res, "Wrong username or password", http.StatusUnauthorized)
 			return
 		} else if err != nil {
-			logger.Info("authenticateUser:", zap.Error(err))
+			logger.Error("authenticateUser:", zap.Error(err))
 			http.Error(res, "Internal error", http.StatusInternalServerError)
 			return
 		}
@@ -109,7 +109,7 @@ func AddOrder(op OrderProcessor, logger logger.Logger) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		userID, ok := getUserIDFromContext(req.Context())
 		if !ok {
-			logger.Info("addOrder: unauthorized")
+			logger.Debug("addOrder: unauthorized")
 			http.Error(res, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -124,9 +124,9 @@ func AddOrder(op OrderProcessor, logger logger.Logger) http.HandlerFunc {
 
 		orderNumber := string(body)
 
-		ok, err = isOrderNumberValid(orderNumber)
-		if !ok || err != nil {
-			logger.Info("authenticateUser:", zap.Error(err))
+		err = isOrderNumberValid(orderNumber)
+		if err != nil {
+			logger.Debug("authenticateUser:", zap.Error(err))
 			http.Error(res, "Incorrect order number format", http.StatusUnprocessableEntity)
 			return
 		}
@@ -136,11 +136,11 @@ func AddOrder(op OrderProcessor, logger logger.Logger) http.HandlerFunc {
 		err = op.AddOrder(req.Context(), orderRequest)
 		if err != nil {
 			if errors.Is(err, storage.ErrOrderNumberWasAlreadyAddedByThisUser) {
-				logger.Info("authenticateUser:", zap.Error(err))
+				logger.Debug("authenticateUser:", zap.Error(err))
 				http.Error(res, "Order number was already added", http.StatusOK)
 				return
 			} else if errors.Is(err, storage.ErrOrderNumberWasAlreadyAddedByAnotherUser) {
-				logger.Info("authenticateUser:", zap.Error(err))
+				logger.Debug("authenticateUser:", zap.Error(err))
 				http.Error(res, "Order number was already added", http.StatusConflict)
 				return
 			}
@@ -153,7 +153,7 @@ func GetOrdersList(op OrderProcessor, logger logger.Logger) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		userID, ok := getUserIDFromContext(req.Context())
 		if !ok {
-			logger.Info("getOrdersList: unauthorized")
+			logger.Debug("getOrdersList: unauthorized")
 			http.Error(res, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -166,7 +166,7 @@ func GetOrdersList(op OrderProcessor, logger logger.Logger) http.HandlerFunc {
 		}
 
 		if len(orders) == 0 {
-			logger.Info("getOrdersList:", zap.Error(err))
+			logger.Debug("getOrdersList:", zap.Error(err))
 			http.Error(res, "No data", http.StatusNoContent)
 			return
 		}
@@ -185,7 +185,7 @@ func GetBonusesAmount(bp BonusesProcessor, logger logger.Logger) http.HandlerFun
 	return func(res http.ResponseWriter, req *http.Request) {
 		userID, ok := getUserIDFromContext(req.Context())
 		if !ok {
-			logger.Info("getBonusesAmount: unauthorized")
+			logger.Debug("getBonusesAmount: unauthorized")
 			http.Error(res, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -211,7 +211,7 @@ func WithdrawBonuses(bp BonusesProcessor, logger logger.Logger) http.HandlerFunc
 	return func(res http.ResponseWriter, req *http.Request) {
 		userID, ok := getUserIDFromContext(req.Context())
 		if !ok {
-			logger.Info("withdrawBonuses: unauthorized")
+			logger.Debug("withdrawBonuses: unauthorized")
 			http.Error(res, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -225,9 +225,9 @@ func WithdrawBonuses(bp BonusesProcessor, logger logger.Logger) http.HandlerFunc
 		}
 		defer req.Body.Close()
 
-		ok, err := isOrderNumberValid(request.OrderNumber)
-		if !ok || err != nil {
-			logger.Info("withdrawBonuses:", zap.Error(err))
+		err := isOrderNumberValid(request.OrderNumber)
+		if err != nil {
+			logger.Debug("withdrawBonuses:", zap.Error(err))
 			http.Error(res, "Incorrect order number format", http.StatusUnprocessableEntity)
 			return
 		}
@@ -235,7 +235,7 @@ func WithdrawBonuses(bp BonusesProcessor, logger logger.Logger) http.HandlerFunc
 		err = bp.UseBonuses(req.Context(), request, userID)
 		if err != nil {
 			if errors.Is(err, storage.ErrNotEnoughBonuses) {
-				logger.Info("withdrawBonuses:", zap.Error(err))
+				logger.Debug("withdrawBonuses:", zap.Error(err))
 				http.Error(res, "Not enough bonuses", http.StatusPaymentRequired)
 				return
 			} else {
@@ -251,7 +251,7 @@ func GetWithdrawals(wp WithdrawalsProcessor, logger logger.Logger) http.HandlerF
 	return func(res http.ResponseWriter, req *http.Request) {
 		userID, ok := getUserIDFromContext(req.Context())
 		if !ok {
-			logger.Info("getWithdrawals: unauthorized")
+			logger.Debug("getWithdrawals: unauthorized")
 			http.Error(res, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -259,7 +259,7 @@ func GetWithdrawals(wp WithdrawalsProcessor, logger logger.Logger) http.HandlerF
 		response, err := wp.GetWithdrawalsHistory(req.Context(), userID)
 		if err != nil {
 			if errors.Is(err, storage.ErrEmptyWithdrawalHistory) {
-				logger.Info("getWithdrawals:", zap.Error(err))
+				logger.Debug("getWithdrawals:", zap.Error(err))
 				http.Error(res, "No withdrawals", http.StatusNoContent)
 				return
 			} else {
